@@ -2,9 +2,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   browserLocalPersistence,
+  getRedirectResult,
   onAuthStateChanged,
   setPersistence,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -28,6 +30,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+    getRedirectResult(auth).catch(() => {
+      setError("Google sign-in could not be completed. Please try again.");
+    });
     return onAuthStateChanged(auth, (next) => {
       setUser(next);
       setLoading(false);
@@ -41,7 +46,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError("");
       await setPersistence(auth, browserLocalPersistence);
-      await signInWithPopup(auth, googleProvider);
+      const mobileBrowser =
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      if (mobileBrowser) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch {
       setError("Google sign-in did not complete. Please try again.");
     }
