@@ -1,0 +1,6 @@
+import { describe, expect, it } from "vitest";
+import { Timestamp } from "firebase/firestore";
+import { applyKnowResult, applyNeedReviewResult, isWordDue } from "./srs";
+import type { Word } from "@/types";
+const base:Word={id:"x",level:"N2",day:1,kanji:"意外",reading:"いがい",english:"unexpected",partOfSpeech:"",example:"",notes:"",difficult:false,suspended:false,learningStatus:"new",nextReviewAt:null,lastReviewedAt:null,reviewIntervalDays:0,reviewCount:0,failedReviewCount:0};
+describe("simple SRS",()=>{const now=new Date("2026-01-01T00:00:00Z");it("schedules a known new word for one day",()=>expect(applyKnowResult(base,now).reviewIntervalDays).toBe(1));it("schedules a failed new word in ten minutes",()=>expect(applyNeedReviewResult(base,now).nextReviewAt?.toMillis()).toBe(now.getTime()+600000));it("makes difficult review intervals shorter",()=>{const normal=applyKnowResult({...base,learningStatus:"review",reviewIntervalDays:3},now);const hard=applyKnowResult({...base,learningStatus:"review",reviewIntervalDays:3,difficult:true},now);expect(hard.reviewIntervalDays).toBeLessThan(normal.reviewIntervalDays as number)});it("detects due active cards only",()=>{const due={...base,nextReviewAt:Timestamp.fromMillis(now.getTime()-1)};expect(isWordDue(due,now)).toBe(true);expect(isWordDue({...due,suspended:true},now)).toBe(false)})});
