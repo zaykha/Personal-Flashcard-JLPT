@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { FileSpreadsheet, UploadCloud } from "lucide-react";
+import { Download, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { read, utils } from "xlsx";
 import { useAuth } from "@/hooks/useAuth";
 import { useWords } from "@/hooks/useWords";
@@ -43,6 +43,6 @@ export function ImportPanel() {
     {parsed.length > 0 && <><div className="preview-summary"><span className="pill"><FileSpreadsheet size={14}/> {fileName}</span><span className="pill good">✓ {valid.length} valid</span><span className="pill bad">{parsed.length - valid.length} invalid</span></div><div className="table-wrap"><table><thead><tr><th>Row</th><th>Level</th><th>Day</th><th>Kanji</th><th>Reading</th><th>English</th><th>Validation</th></tr></thead><tbody>{parsed.slice(0, 100).map((row) => { const raw = normalize(row.raw); return <tr key={row.row} className={row.errors.length ? "invalid-row" : ""}><td>{row.row}</td><td>{row.data?.level ?? String(raw.level ?? "")}</td><td>{row.data?.day ?? String(raw.day ?? "")}</td><td>{row.data?.kanji ?? String(raw.kanji ?? "")}</td><td>{row.data?.reading ?? String(raw.reading ?? "")}</td><td>{row.data?.english ?? String(raw.english ?? "")}</td><td>{row.errors.join(" · ") || "Ready"}</td></tr>; })}</tbody></table></div>
       {busy && <div style={{ marginTop: 16 }}><div className="progress"><div style={{ width: `${valid.length ? (progress / valid.length) * 100 : 0}%` }}/></div><p className="hint">Publishing {progress} of {valid.length}…</p></div>}
       <div className="form-actions"><button className="btn secondary" disabled={busy} onClick={() => setParsed([])}>Cancel</button><button className="btn" disabled={busy || !valid.length} onClick={confirmImport}>{busy ? "Publishing…" : `Publish ${valid.length} words`}</button></div></>}
-    <div className="section-title"><h3>Expected columns</h3><a href="/sample-vocabulary.csv" download className="btn secondary">Download sample CSV</a></div><p className="hint">Optional columns: partOfSpeech, example, notes. Re-importing the same level, day, kanji, and reading updates lesson content without changing any user&apos;s study progress.</p>
+    <div className="section-title"><h3>Expected columns</h3><a href="/sample-vocabulary.csv" download className="btn secondary compact-mobile" aria-label="Download sample CSV"><Download size={17}/><span>Download sample CSV</span></a></div><p className="hint">Optional columns: partOfSpeech, example, notes. Re-importing the same level, day, kanji, and reading updates lesson content without changing any user&apos;s study progress.</p>
   </section>;
 }

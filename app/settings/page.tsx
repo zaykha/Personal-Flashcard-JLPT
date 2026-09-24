@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { utils, writeFile } from "xlsx";
-import { Download, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { Download, LogOut, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { CustomSelect } from "@/components/CustomSelect";
 import { ImportPanel } from "@/components/ImportPanel";
@@ -152,7 +152,8 @@ export default function SettingsPage() {
               <p>Prevents memorizing the list order.</p>
             </div>
             <button
-              className="btn secondary"
+              className="btn secondary compact-mobile"
+              aria-label="Publish my existing words"
               onClick={() => setStudy({ ...study, shuffle: !study.shuffle })}
             >
               {study.shuffle ? "On" : "Off"}
@@ -216,7 +217,8 @@ export default function SettingsPage() {
               disabled={migrating}
               onClick={migrateExisting}
             >
-              {migrating ? "Publishing existing words…" : "Publish my existing words"}
+              <Upload size={17} />
+              <span>{migrating ? "Publishing existing words…" : "Publish my existing words"}</span>
             </button>
             {migrationMessage && <p className="pill good">{migrationMessage}</p>}
           </section>
@@ -243,12 +245,13 @@ export default function SettingsPage() {
                 placeholder="DELETE ALL"
               />
               <button
-                className="btn danger"
+                className="btn danger compact-mobile"
+                aria-label="Delete official catalog"
                 disabled={confirmText !== "DELETE ALL" || deleting}
                 onClick={removeAll}
               >
                 <Trash2 size={17} />
-                {deleting ? "Deleting…" : "Delete official catalog"}
+                <span>{deleting ? "Deleting…" : "Delete official catalog"}</span>
               </button>
             </div>
           </section>

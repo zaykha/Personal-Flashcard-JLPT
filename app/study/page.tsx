@@ -3,9 +3,12 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  ArrowLeft,
   BookOpen,
+  BookOpenText,
   Brain,
   Check,
+  Eye,
   RotateCcw,
   Shuffle,
   Star,
@@ -41,10 +44,6 @@ function StudyContent() {
   const [revealed, setRevealed] = useState(false);
   const [reading, setReading] = useState(false);
   const [stats, setStats] = useState({ know: 0, review: 0, marked: 0 });
-  const [undo, setUndo] = useState<{
-    word: Word;
-    grade: "know" | "review";
-  } | null>(null);
   useEffect(() => {
     setDirection(study.direction);
     setShuffle(study.shuffle);
@@ -92,18 +91,15 @@ function StudyContent() {
     setStats({ know: 0, review: 0, marked: 0 });
     setRevealed(false);
     setReading(false);
-    setUndo(null);
   }
   const grade = useCallback(
     async (kind: "know" | "review") => {
       if (!current || !revealed) return;
-      const original = { ...current };
       const patch =
         kind === "know"
           ? applyKnowResult(current)
           : applyNeedReviewResult(current);
       await patchWord(current.id, patch);
-      setUndo({ word: original, grade: kind });
       setStats((s) => ({ ...s, [kind]: s[kind] + 1 }));
       setIndex((i) => i + 1);
       setRevealed(false);
@@ -111,15 +107,6 @@ function StudyContent() {
     },
     [current, revealed, patchWord],
   );
-  const undoGrade = useCallback(async () => {
-    if (!undo) return;
-    const { id, ...restore } = undo.word;
-    await patchWord(id, restore);
-    setIndex((i) => Math.max(0, i - 1));
-    setStats((s) => ({ ...s, [undo.grade]: Math.max(0, s[undo.grade] - 1) }));
-    setUndo(null);
-    setRevealed(true);
-  }, [undo, patchWord]);
   const toggleDifficult = useCallback(async () => {
     if (!current) return;
     const next = !current.difficult;
@@ -133,16 +120,6 @@ function StudyContent() {
       ...s,
       marked: Math.max(0, s.marked + (next ? 1 : -1)),
     }));
-  }, [current, patchWord]);
-  const toggleSuspended = useCallback(async () => {
-    if (!current) return;
-    const next = !current.suspended;
-    await patchWord(current.id, { suspended: next });
-    setSession(
-      (s) =>
-        s?.map((w) => (w.id === current.id ? { ...w, suspended: next } : w)) ||
-        null,
-    );
   }, [current, patchWord]);
   useEffect(() => {
     function key(e: KeyboardEvent) {
@@ -160,11 +137,10 @@ function StudyContent() {
       if (e.key === "1") grade("review");
       if (e.key === "2") grade("know");
       if (e.key.toLowerCase() === "d") toggleDifficult();
-      if (e.key.toLowerCase() === "z") undoGrade();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [grade, toggleDifficult, undoGrade]);
+  }, [grade, toggleDifficult]);
   if (session) {
     if (index >= session.length)
       return (
@@ -192,18 +168,9 @@ function StudyContent() {
               <span>Difficult marked</span>
             </div>
           </div>
-          <div className="reveal-actions">
-            <button
-              className="btn secondary"
-              disabled={!undo}
-              onClick={undoGrade}
-            >
-              Undo last grade
-            </button>
-            <button className="btn" onClick={() => setSession(null)}>
-              Back to study
-            </button>
-          </div>
+          <button className="btn" onClick={() => setSession(null)}>
+            <ArrowLeft size={17} /> Back to study
+          </button>
         </div>
       );
     if (!current) return null;
@@ -213,102 +180,59 @@ function StudyContent() {
           <span>
             {index + 1} / {session.length}
           </span>
-          <button className="btn secondary" onClick={() => setSession(null)}>
-            <X size={16} /> Exit
+          <button
+            className="btn secondary session-exit"
+            aria-label="Exit session"
+            onClick={() => setSession(null)}
+          >
+            <X size={18} /> <span>Exit</span>
           </button>
         </div>
-        <article className="flashcard">
-          <span className="level">
-            {current.level} · DAY {current.day}
-          </span>
-          <button
-            className={`icon-btn star ${current.difficult ? "starred" : ""}`}
-            aria-label="Toggle difficult"
-            onClick={toggleDifficult}
-          >
-            <Star
-              size={19}
-              fill={current.difficult ? "currentColor" : "none"}
-            />
-          </button>
-          {cardDirection === "kanji" ? (
-            <>
-              <div className="prompt">{current.kanji}</div>
-              {(reading || revealed) && (
-                <div className="reading">{current.reading}</div>
-              )}
-              {revealed && (
-                <>
-                  <div className="meaning">{current.english}</div>
-                  {current.partOfSpeech && (
-                    <span className="pos">{current.partOfSpeech}</span>
-                  )}
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="prompt english">{current.english}</div>
-              {revealed && (
-                <>
-                  <div
-                    className="meaning"
-                    style={{ fontFamily: "var(--font-jp)" }}
-                  >
-                    {current.kanji}
-                  </div>
-                  <div className="reading">{current.reading}</div>
-                  {current.partOfSpeech && (
-                    <span className="pos">{current.partOfSpeech}</span>
-                  )}
-                </>
-              )}
-            </>
-          )}
-          {revealed && current.example && (
-            <p className="example">{current.example}</p>
-          )}
-          {revealed && current.notes && (
-            <p className="notes">{current.notes}</p>
-          )}
-          {!revealed && (
-            <div className="reveal-actions">
-              {cardDirection === "kanji" && !reading && (
-                <button
-                  className="btn secondary"
-                  onClick={() => setReading(true)}
-                >
-                  Show reading
-                </button>
-              )}
-              <button className="btn" onClick={() => setRevealed(true)}>
-                Reveal answer
-              </button>
-            </div>
-          )}
-        </article>
+        <div
+          className={`flashcard-scene ${revealed ? "is-flipped" : ""}`}
+          aria-live="polite"
+        >
+          <div className="flashcard-flipper">
+            <article
+              className="flashcard flashcard-face flashcard-front"
+              aria-hidden={revealed}
+              inert={revealed ? true : undefined}
+            >
+              <span className="level">{current.level} · DAY {current.day}</span>
+              <button className={`icon-btn star ${current.difficult ? "starred" : ""}`} aria-label={current.difficult ? "Remove difficult mark" : "Mark difficult"} onClick={toggleDifficult}><Star size={19} fill={current.difficult ? "currentColor" : "none"}/></button>
+              <div className={`prompt ${cardDirection === "english" ? "english" : ""}`}>{cardDirection === "kanji" ? current.kanji : current.english}</div>
+              {reading && <div className="reading">{current.reading}</div>}
+              <div className="reveal-actions card-actions">
+                <button className="btn secondary" aria-label={reading ? "Hide reading" : "Show reading"} aria-pressed={reading} onClick={() => setReading((shown) => !shown)}><BookOpenText size={18}/><span>{reading ? "Hide reading" : "Reading"}</span></button>
+                <button className="btn" aria-label="Reveal answer" onClick={() => setRevealed(true)}><Eye size={18}/><span>Reveal</span></button>
+              </div>
+            </article>
+            <article
+              className="flashcard flashcard-face flashcard-back"
+              aria-hidden={!revealed}
+              inert={!revealed ? true : undefined}
+            >
+              <span className="level">ANSWER · {current.level}</span>
+              <button className={`icon-btn star ${current.difficult ? "starred" : ""}`} aria-label={current.difficult ? "Remove difficult mark" : "Mark difficult"} onClick={toggleDifficult}><Star size={19} fill={current.difficult ? "currentColor" : "none"}/></button>
+              <div className="prompt answer-kanji">{current.kanji}</div>
+              <div className="reading">{current.reading}</div>
+              <div className="meaning">{current.english}</div>
+              {current.partOfSpeech && <span className="pos">{current.partOfSpeech}</span>}
+              {current.example && <p className="example">{current.example}</p>}
+              {current.notes && <p className="notes">{current.notes}</p>}
+            </article>
+          </div>
+        </div>
         {revealed && (
           <div className="grade-controls">
-            <button className="btn danger" onClick={() => grade("review")}>
-              <RotateCcw size={19} /> Need review
+            <button className="btn danger" aria-label="Need review" onClick={() => grade("review")}>
+              <RotateCcw size={19} /> Review
             </button>
             <button className="btn green" onClick={() => grade("know")}>
               <Check size={19} /> Know
             </button>
           </div>
         )}
-        <div className="session-tools">
-          <button
-            className="btn secondary"
-            disabled={!undo}
-            onClick={undoGrade}
-          >
-            Undo last grade
-          </button>
-          <button className="btn secondary" onClick={toggleSuspended}>
-            {current.suspended ? "Unsuspend" : "Suspend word"}
-          </button>
-        </div>
       </div>
     );
   }
@@ -347,7 +271,7 @@ function StudyContent() {
           <span>Only words scheduled for now</span>
         </button>
       </div>
-      <section className="panel" style={{ marginTop: 18 }}>
+      <section className="panel study-setup" style={{ marginTop: 18 }}>
         <div className="fields">
           <div className="field">
             <label>JLPT level</label>
