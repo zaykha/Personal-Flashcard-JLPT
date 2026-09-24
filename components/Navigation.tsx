@@ -2,13 +2,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Home, Import, Library, Settings, Star } from "lucide-react";
+import { BookOpen, Home, Library, Settings, Star } from "lucide-react";
 const links = [
   { href: "/", label: "Home", icon: Home },
   { href: "/study", label: "Study", icon: BookOpen },
   { href: "/browse", label: "Browse", icon: Library },
   { href: "/difficult", label: "Difficult", icon: Star },
-  { href: "/import", label: "Import", icon: Import },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 export function Navigation() {

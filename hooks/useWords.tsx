@@ -1,13 +1,13 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
+
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   collection,
-  deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
-  updateDoc,
   writeBatch,
   type DocumentData,
 } from "firebase/firestore";
@@ -15,6 +15,24 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "./useAuth";
 import type { Word, WordInput } from "@/types";
 import { stableWordId } from "@/utils/word-id";
+
+type CatalogWord = WordInput & {
+  id: string;
+  createdAt?: Word["createdAt"];
+  updatedAt?: Word["updatedAt"];
+};
+
+type Progress = Pick<
+  Word,
+  | "difficult"
+  | "suspended"
+  | "learningStatus"
+  | "nextReviewAt"
+  | "lastReviewedAt"
+  | "reviewIntervalDays"
+  | "reviewCount"
+  | "failedReviewCount"
+> & { updatedAt?: Word["updatedAt"] };
 
 type WordsValue = {
   words: Word[];
@@ -25,151 +43,265 @@ type WordsValue = {
   patchWord: (id: string, patch: Partial<Word>) => Promise<void>;
   importWords: (
     inputs: WordInput[],
-    progress?: (n: number) => void,
+    progress?: (count: number) => void,
   ) => Promise<void>;
   deleteAll: () => Promise<void>;
+  migrateLegacyWords: () => Promise<number>;
 };
+
+const defaultProgress: Progress = {
+  difficult: false,
+  suspended: false,
+  learningStatus: "new",
+  nextReviewAt: null,
+  lastReviewedAt: null,
+  reviewIntervalDays: 0,
+  reviewCount: 0,
+  failedReviewCount: 0,
+};
+
+const progressKeys = new Set<keyof Word>([
+  "difficult",
+  "suspended",
+  "learningStatus",
+  "nextReviewAt",
+  "lastReviewedAt",
+  "reviewIntervalDays",
+  "reviewCount",
+  "failedReviewCount",
+]);
+
 const WordsContext = createContext<WordsValue | null>(null);
-const fromDoc = (id: string, data: DocumentData) => ({ id, ...data }) as Word;
+const contentFromData = (id: string, data: DocumentData) =>
+  ({ id, ...data }) as CatalogWord;
+
+function sameWord(a: WordInput, b: WordInput) {
+  return (
+    a.level === b.level &&
+    a.day === b.day &&
+    a.kanji.trim() === b.kanji.trim() &&
+    a.reading.trim() === b.reading.trim()
+  );
+}
 
 export function WordsProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  const [words, setWords] = useState<Word[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user, isAdmin } = useAuth();
+  const [catalog, setCatalog] = useState<CatalogWord[]>([]);
+  const [progress, setProgress] = useState<Record<string, Progress>>({});
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [progressReady, setProgressReady] = useState(false);
   const [error, setError] = useState("");
+
   useEffect(() => {
     if (!user) {
-      setWords([]);
-      setLoading(false);
+      setCatalog([]);
+      setProgress({});
+      setCatalogReady(true);
+      setProgressReady(true);
       return;
     }
-    setLoading(true);
-    return onSnapshot(
-      collection(db, "users", user.uid, "words"),
-      (snap) => {
-        setWords(snap.docs.map((d) => fromDoc(d.id, d.data())));
-        setLoading(false);
+    setCatalogReady(false);
+    setProgressReady(false);
+    setError("");
+    const unsubscribeCatalog = onSnapshot(
+      collection(db, "catalogWords"),
+      (snapshot) => {
+        setCatalog(
+          snapshot.docs.map((item) =>
+            contentFromData(item.id, item.data()),
+          ),
+        );
+        setCatalogReady(true);
       },
       () => {
-        setError(
-          "Could not load vocabulary. Check your connection and Firestore rules.",
-        );
-        setLoading(false);
+        setError("Could not load the lesson catalog. Check your connection.");
+        setCatalogReady(true);
       },
     );
+    const unsubscribeProgress = onSnapshot(
+      collection(db, "users", user.uid, "progress"),
+      (snapshot) => {
+        setProgress(
+          Object.fromEntries(
+            snapshot.docs.map((item) => [item.id, item.data() as Progress]),
+          ),
+        );
+        setProgressReady(true);
+      },
+      () => {
+        setError("Could not load your study progress. Check your connection.");
+        setProgressReady(true);
+      },
+    );
+    return () => {
+      unsubscribeCatalog();
+      unsubscribeProgress();
+    };
   }, [user]);
+
+  const words = useMemo(
+    () =>
+      catalog.map(
+        (word) =>
+          ({
+            ...word,
+            ...defaultProgress,
+            ...(progress[word.id] ?? {}),
+          }) as Word,
+      ),
+    [catalog, progress],
+  );
+
   const requireUser = () => {
     if (!user) throw new Error("Sign in required");
     return user;
   };
+  const requireAdmin = () => {
+    if (!isAdmin) throw new Error("Administrator access required");
+    return requireUser();
+  };
+
   async function saveWord(input: WordInput, id?: string) {
-    const u = requireUser();
-    const wordId = stableWordId(input);
-    const ref = doc(db, "users", u.uid, "words", wordId);
-    const existing = words.find((w) => w.id === wordId);
-    const source = id ? words.find((w) => w.id === id) : undefined;
-    if (id && id !== wordId && source) {
-      const batch = writeBatch(db);
-      const { id: sourceId, ...preserved } = existing ?? source;
-      void sourceId;
-      batch.set(
-        ref,
-        { ...preserved, ...input, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
-      batch.delete(doc(db, "users", u.uid, "words", id));
-      await batch.commit();
-      return;
-    }
+    requireAdmin();
+    const matching = catalog.find((word) => sameWord(word, input));
+    const wordId = id ?? matching?.id ?? stableWordId(input);
+    const exists = catalog.some((word) => word.id === wordId);
     await setDoc(
-      ref,
-      existing
-        ? { ...input, updatedAt: serverTimestamp() }
-        : {
-            ...input,
-            difficult: false,
-            suspended: false,
-            learningStatus: "new",
-            nextReviewAt: null,
-            lastReviewedAt: null,
-            reviewIntervalDays: 0,
-            reviewCount: 0,
-            failedReviewCount: 0,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
+      doc(db, "catalogWords", wordId),
+      {
+        ...input,
+        ...(!exists ? { createdAt: serverTimestamp() } : {}),
+        updatedAt: serverTimestamp(),
+      },
       { merge: true },
     );
   }
+
   async function importWords(
     inputs: WordInput[],
-    progress?: (n: number) => void,
+    reportProgress?: (count: number) => void,
   ) {
-    const u = requireUser();
+    requireAdmin();
     for (let start = 0; start < inputs.length; start += 450) {
       const batch = writeBatch(db);
       const chunk = inputs.slice(start, start + 450);
       chunk.forEach((input) => {
-        const id = stableWordId(input);
-        const exists = words.some((w) => w.id === id);
-        const ref = doc(db, "users", u.uid, "words", id);
+        const matching = catalog.find((word) => sameWord(word, input));
+        const wordId = matching?.id ?? stableWordId(input);
         batch.set(
-          ref,
-          exists
-            ? { ...input, updatedAt: serverTimestamp() }
-            : {
-                ...input,
-                difficult: false,
-                suspended: false,
-                learningStatus: "new",
-                nextReviewAt: null,
-                lastReviewedAt: null,
-                reviewIntervalDays: 0,
-                reviewCount: 0,
-                failedReviewCount: 0,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              },
+          doc(db, "catalogWords", wordId),
+          {
+            ...input,
+            ...(!matching ? { createdAt: serverTimestamp() } : {}),
+            updatedAt: serverTimestamp(),
+          },
           { merge: true },
         );
       });
       await batch.commit();
-      progress?.(Math.min(inputs.length, start + chunk.length));
+      reportProgress?.(Math.min(inputs.length, start + chunk.length));
     }
   }
+
+  async function patchWord(id: string, patch: Partial<Word>) {
+    const currentUser = requireUser();
+    const progressPatch = Object.fromEntries(
+      Object.entries(patch).filter(([key]) =>
+        progressKeys.has(key as keyof Word),
+      ),
+    );
+    await setDoc(
+      doc(db, "users", currentUser.uid, "progress", id),
+      { ...progressPatch, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  }
+
+  async function deleteWord(id: string) {
+    const currentUser = requireAdmin();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "catalogWords", id));
+    batch.delete(doc(db, "users", currentUser.uid, "progress", id));
+    await batch.commit();
+  }
+
   async function deleteAll() {
-    const u = requireUser();
-    for (let start = 0; start < words.length; start += 450) {
+    requireAdmin();
+    for (let start = 0; start < catalog.length; start += 450) {
       const batch = writeBatch(db);
-      words
+      catalog
         .slice(start, start + 450)
-        .forEach((w) => batch.delete(doc(db, "users", u.uid, "words", w.id)));
+        .forEach((word) => batch.delete(doc(db, "catalogWords", word.id)));
       await batch.commit();
     }
   }
+
+  async function migrateLegacyWords() {
+    const currentUser = requireAdmin();
+    const legacySnapshot = await getDocs(
+      collection(db, "users", currentUser.uid, "words"),
+    );
+    for (let start = 0; start < legacySnapshot.docs.length; start += 150) {
+      const batch = writeBatch(db);
+      legacySnapshot.docs.slice(start, start + 150).forEach((item) => {
+        const data = item.data() as Word;
+        const input: WordInput = {
+          level: data.level,
+          day: data.day,
+          kanji: data.kanji,
+          reading: data.reading,
+          english: data.english,
+          partOfSpeech: data.partOfSpeech ?? "",
+          example: data.example ?? "",
+          notes: data.notes ?? "",
+        };
+        batch.set(
+          doc(db, "catalogWords", item.id),
+          {
+            ...input,
+            createdAt: data.createdAt ?? serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        batch.set(
+          doc(db, "users", currentUser.uid, "progress", item.id),
+          {
+            difficult: data.difficult ?? false,
+            suspended: data.suspended ?? false,
+            learningStatus: data.learningStatus ?? "new",
+            nextReviewAt: data.nextReviewAt ?? null,
+            lastReviewedAt: data.lastReviewedAt ?? null,
+            reviewIntervalDays: data.reviewIntervalDays ?? 0,
+            reviewCount: data.reviewCount ?? 0,
+            failedReviewCount: data.failedReviewCount ?? 0,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        batch.delete(item.ref);
+      });
+      await batch.commit();
+    }
+    return legacySnapshot.size;
+  }
+
   const value: WordsValue = {
     words,
-    loading,
+    loading: !catalogReady || !progressReady,
     error,
     saveWord,
-    deleteWord: async (id) => {
-      const u = requireUser();
-      await deleteDoc(doc(db, "users", u.uid, "words", id));
-    },
-    patchWord: async (id, patch) => {
-      const u = requireUser();
-      await updateDoc(doc(db, "users", u.uid, "words", id), {
-        ...patch,
-        updatedAt: serverTimestamp(),
-      });
-    },
+    deleteWord,
+    patchWord,
     importWords,
     deleteAll,
+    migrateLegacyWords,
   };
   return (
     <WordsContext.Provider value={value}>{children}</WordsContext.Provider>
   );
 }
+
 export function useWords() {
   const value = useContext(WordsContext);
   if (!value) throw new Error("useWords requires WordsProvider");

@@ -7,10 +7,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { WordForm } from "@/components/WordForm";
 import { CustomSelect } from "@/components/CustomSelect";
 import { useWords } from "@/hooks/useWords";
+import { useAuth } from "@/hooks/useAuth";
 import { JLPT_LEVELS, type Word } from "@/types";
 function BrowseContent() {
   const params = useSearchParams();
   const { words, saveWord, deleteWord, patchWord } = useWords();
+  const { isAdmin } = useAuth();
   const [level, setLevel] = useState(params.get("level") || "all");
   const [day, setDay] = useState("all");
   const [status, setStatus] = useState("all");
@@ -50,14 +52,16 @@ function BrowseContent() {
       <PageHeader
         eyebrow="Your library"
         title="Browse vocabulary"
-        description="Search, filter, and manage every word."
+        description="Search and study the official lesson catalog."
         action={
-          <button className="btn" onClick={() => setEditing(null)}>
-            <Plus size={18} /> Add word
-          </button>
+          isAdmin ? (
+            <button className="btn" onClick={() => setEditing(null)}>
+              <Plus size={18} /> Add word
+            </button>
+          ) : undefined
         }
       />
-      {editing !== undefined && (
+      {isAdmin && editing !== undefined && (
         <div className="panel" style={{ marginBottom: 18 }}>
           <h2 style={{ marginTop: 0 }}>
             {editing ? "Edit word" : "Add a word"}
@@ -177,13 +181,15 @@ function BrowseContent() {
                   fill={word.difficult ? "currentColor" : "none"}
                 />
               </button>
-              <button
-                aria-label="Edit word"
-                className="icon-btn"
-                onClick={() => setEditing(word)}
-              >
-                <Pencil size={17} />
-              </button>
+              {isAdmin && (
+                <button
+                  aria-label="Edit word"
+                  className="icon-btn"
+                  onClick={() => setEditing(word)}
+                >
+                  <Pencil size={17} />
+                </button>
+              )}
               <button
                 aria-label={word.suspended ? "Unsuspend word" : "Suspend word"}
                 className="icon-btn"
@@ -193,13 +199,15 @@ function BrowseContent() {
               >
                 <CirclePause size={17} />
               </button>
-              <button
-                aria-label="Delete word"
-                className="icon-btn"
-                onClick={() => remove(word)}
-              >
-                <Trash2 size={17} />
-              </button>
+              {isAdmin && (
+                <button
+                  aria-label="Delete word"
+                  className="icon-btn"
+                  onClick={() => remove(word)}
+                >
+                  <Trash2 size={17} />
+                </button>
+              )}
             </div>
           </article>
         ))}

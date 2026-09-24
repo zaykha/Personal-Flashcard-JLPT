@@ -10,10 +10,12 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
+import { auth, db, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 
 type AuthValue = {
   user: User | null;
+  isAdmin: boolean;
   loading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -23,21 +25,43 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [roleLoading, setRoleLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!isFirebaseConfigured) {
-      setLoading(false);
+      setAuthLoading(false);
       return;
     }
     getRedirectResult(auth).catch(() => {
       setError("Google sign-in could not be completed. Please try again.");
     });
     return onAuthStateChanged(auth, (next) => {
+      setRoleLoading(Boolean(next));
       setUser(next);
-      setLoading(false);
+      setAuthLoading(false);
     });
   }, []);
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      setRoleLoading(false);
+      return;
+    }
+    setRoleLoading(true);
+    return onSnapshot(
+      doc(db, "admins", user.uid),
+      (snapshot) => {
+        setIsAdmin(snapshot.exists());
+        setRoleLoading(false);
+      },
+      () => {
+        setIsAdmin(false);
+        setRoleLoading(false);
+      },
+    );
+  }, [user]);
   async function login() {
     if (!isFirebaseConfigured) {
       setError("Add your Firebase environment variables to .env.local first.");
@@ -60,7 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout: () => signOut(auth), error }}
+      value={{
+        user,
+        isAdmin,
+        loading: authLoading || roleLoading,
+        login,
+        logout: () => signOut(auth),
+        error,
+      }}
     >
       {children}
     </AuthContext.Provider>

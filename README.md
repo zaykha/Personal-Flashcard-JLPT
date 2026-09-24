@@ -1,6 +1,6 @@
 # Kotoba — JLPT flashcards
 
-A mobile-first JLPT vocabulary app built with Next.js, TypeScript, Firebase Authentication, Cloud Firestore, Tailwind CSS, and SheetJS. Vocabulary is private to each Google account and organized automatically by JLPT level and day.
+A mobile-first JLPT vocabulary app built with Next.js, TypeScript, Firebase Authentication, Cloud Firestore, Tailwind CSS, and SheetJS. Administrators publish a shared official lesson catalog, while each user keeps independent private SRS progress.
 
 ## Local setup
 
@@ -19,7 +19,16 @@ The development command listens on `0.0.0.0`, so phones on the same Wi-Fi can op
 4. Under **Authentication → Settings → Authorized domains**, add your Vercel production domain (localhost is available for development).
 5. In **Google Cloud Console → APIs & Services → Credentials**, open the Web OAuth client used by Firebase and add `https://YOUR_DOMAIN/__/auth/handler` as an authorized redirect URI.
 6. Create a Cloud Firestore database. Production mode is recommended.
-7. Publish the contents of `firestore.rules` in **Firestore Database → Rules**. These rules permit an authenticated user to access only `users/{their uid}/...`.
+7. Publish the contents of `firestore.rules` in **Firestore Database → Rules**. These rules allow signed-in users to read the official catalog, restrict personal progress to its owner, and reserve catalog writes for administrators.
+
+### Create the administrator
+
+1. Sign in once, then copy your UID from **Firebase Console → Authentication → Users**.
+2. In **Firestore Database → Data**, create a collection named `admins`.
+3. Create a document whose document ID is exactly your Firebase UID. A field such as `role: "admin"` may be added for clarity; authorization is based on the protected document path.
+4. Never provide client-side write access to `admins`. The included rules intentionally deny all app writes to this collection.
+
+Administrators can import, add, edit, and delete official lesson content. Normal users can read the catalog and modify only their own progress. Admin controls appear in Settings and are also enforced by Firestore—not merely hidden in the interface.
 
 No Firebase Storage bucket is used. Imported files are parsed locally and only normalized word records are written to Firestore.
 
@@ -27,7 +36,9 @@ No Firebase Storage bucket is used. Imported files are parsed locally and only n
 
 Import `.csv` and `.xlsx` files with these required columns: `level`, `day`, `kanji`, `reading`, `english`. Optional columns are `partOfSpeech`, `example`, and `notes`. Headers are case-insensitive and tolerate spaces, hyphens, and underscores.
 
-Words use a stable ID derived from level + day + kanji + reading. Re-importing the same word updates vocabulary fields with Firestore merge writes and preserves SRS state, difficult/suspended flags, and review counts. Writes are split into batches of 450, below Firestore's 500-operation limit.
+Official words are stored in `catalogWords/{wordId}`. Personal difficult flags and SRS history are stored separately in `users/{uid}/progress/{wordId}`. Re-importing a word updates only the official content and therefore preserves progress for every user. Writes are split into batches of 450, below Firestore's 500-operation limit.
+
+After deploying this data-model update, the administrator should open Settings and select **Publish my existing words** once. This atomically copies legacy `users/{adminUid}/words` documents into the official catalog, preserves the administrator's progress, and removes the migrated legacy documents.
 
 A tiny development file is available at `public/sample-vocabulary.csv`.
 

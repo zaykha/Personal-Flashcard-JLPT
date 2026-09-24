@@ -14,6 +14,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { CustomSelect } from "@/components/CustomSelect";
 import { useWords } from "@/hooks/useWords";
+import { useAuth } from "@/hooks/useAuth";
 import { useSettings } from "@/hooks/useSettings";
 import { applyKnowResult, applyNeedReviewResult, isWordDue } from "@/utils/srs";
 import { JLPT_LEVELS, type StudyDirection, type Word } from "@/types";
@@ -24,6 +25,7 @@ const shuffled = <T,>(items: T[]) =>
     .map((x) => x.value);
 function StudyContent() {
   const params = useSearchParams();
+  const { isAdmin } = useAuth();
   const { words, patchWord } = useWords();
   const { study } = useSettings();
   const [level, setLevel] = useState(params.get("level") || "N5");
@@ -415,9 +417,11 @@ function StudyContent() {
               ? "No words are due right now."
               : "Choose another level, day, or mode."}
           </p>
-          <Link href="/import" className="btn secondary">
-            Import words
-          </Link>
+          {isAdmin && (
+            <Link href="/settings" className="btn secondary">
+              Manage lessons
+            </Link>
+          )}
         </div>
       )}
     </>

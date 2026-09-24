@@ -1,19 +1,22 @@
 "use client";
 import { useState } from "react";
 import { utils, writeFile } from "xlsx";
-import { Download, LogOut, Trash2 } from "lucide-react";
+import { Download, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { CustomSelect } from "@/components/CustomSelect";
+import { ImportPanel } from "@/components/ImportPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { useWords } from "@/hooks/useWords";
 import { useSettings, type Theme } from "@/hooks/useSettings";
 import type { StudyDirection } from "@/types";
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
-  const { words, deleteAll } = useWords();
+  const { user, isAdmin, logout } = useAuth();
+  const { words, deleteAll, migrateLegacyWords } = useWords();
   const { theme, setTheme, study, setStudy } = useSettings();
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [migrationMessage, setMigrationMessage] = useState("");
   const exportRows = () =>
     words.map(
       ({
@@ -76,6 +79,24 @@ export default function SettingsPage() {
       setDeleting(false);
     }
   }
+  async function migrateExisting() {
+    setMigrating(true);
+    setMigrationMessage("");
+    try {
+      const count = await migrateLegacyWords();
+      setMigrationMessage(
+        count
+          ? `${count} existing words were published and your progress was preserved.`
+          : "No private legacy words remain to publish.",
+      );
+    } catch {
+      setMigrationMessage(
+        "Migration could not be completed. Confirm your administrator record and Firestore rules.",
+      );
+    } finally {
+      setMigrating(false);
+    }
+  }
   return (
     <>
       <PageHeader
@@ -90,6 +111,11 @@ export default function SettingsPage() {
             <div>
               <b>{user?.displayName || "Google account"}</b>
               <p>{user?.email}</p>
+              {isAdmin && (
+                <span className="pill good">
+                  <ShieldCheck size={14} /> Administrator
+                </span>
+              )}
             </div>
             <button className="btn secondary" onClick={logout}>
               <LogOut size={17} /> Log out
@@ -176,35 +202,57 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
-        <section
-          className="panel"
-          style={{
-            borderColor: "color-mix(in srgb,var(--red) 45%,var(--line))",
-          }}
-        >
-          <h2 style={{ color: "var(--red)" }}>Danger zone</h2>
-          <p className="hint">
-            Permanently delete all vocabulary and study history. Type{" "}
-            <b>DELETE ALL</b> to confirm.
-          </p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <input
-              className="search-input"
-              style={{ flex: 1 }}
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="DELETE ALL"
-            />
+        {isAdmin && (
+          <section className="panel">
+            <p className="eyebrow">Administrator only</p>
+            <h2>Publish existing vocabulary</h2>
+            <p className="hint">
+              Run this once after deploying the shared catalog. It moves the
+              words previously stored under your private account into the
+              official catalog and preserves your SRS history.
+            </p>
             <button
-              className="btn danger"
-              disabled={confirmText !== "DELETE ALL" || deleting}
-              onClick={removeAll}
+              className="btn secondary"
+              disabled={migrating}
+              onClick={migrateExisting}
             >
-              <Trash2 size={17} />
-              {deleting ? "Deleting…" : "Delete all vocabulary"}
+              {migrating ? "Publishing existing words…" : "Publish my existing words"}
             </button>
-          </div>
-        </section>
+            {migrationMessage && <p className="pill good">{migrationMessage}</p>}
+          </section>
+        )}
+        {isAdmin && <ImportPanel />}
+        {isAdmin && (
+          <section
+            className="panel"
+            style={{
+              borderColor: "color-mix(in srgb,var(--red) 45%,var(--line))",
+            }}
+          >
+            <h2 style={{ color: "var(--red)" }}>Catalog danger zone</h2>
+            <p className="hint">
+              Permanently delete the official vocabulary catalog for every
+              user. Type <b>DELETE ALL</b> to confirm.
+            </p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input
+                className="search-input"
+                style={{ flex: 1 }}
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="DELETE ALL"
+              />
+              <button
+                className="btn danger"
+                disabled={confirmText !== "DELETE ALL" || deleting}
+                onClick={removeAll}
+              >
+                <Trash2 size={17} />
+                {deleting ? "Deleting…" : "Delete official catalog"}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </>
   );
