@@ -8,6 +8,8 @@ import {
   BookOpenText,
   Brain,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   RotateCcw,
   Shuffle,
@@ -121,6 +123,17 @@ function StudyContent() {
       marked: Math.max(0, s.marked + (next ? 1 : -1)),
     }));
   }, [current, patchWord]);
+  const navigate = useCallback(
+    (offset: -1 | 1) => {
+      if (!session) return;
+      setIndex((currentIndex) =>
+        Math.min(session.length - 1, Math.max(0, currentIndex + offset)),
+      );
+      setRevealed(false);
+      setReading(false);
+    },
+    [session],
+  );
   useEffect(() => {
     function key(e: KeyboardEvent) {
       if (
@@ -137,10 +150,12 @@ function StudyContent() {
       if (e.key === "1") grade("review");
       if (e.key === "2") grade("know");
       if (e.key.toLowerCase() === "d") toggleDifficult();
+      if (e.key === "ArrowLeft") navigate(-1);
+      if (e.key === "ArrowRight") navigate(1);
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [grade, toggleDifficult]);
+  }, [grade, navigate, toggleDifficult]);
   if (session) {
     if (index >= session.length)
       return (
@@ -222,6 +237,24 @@ function StudyContent() {
               {current.notes && <p className="notes">{current.notes}</p>}
             </article>
           </div>
+          <button
+            type="button"
+            className="card-nav card-nav-prev"
+            aria-label="Previous card"
+            disabled={index === 0}
+            onClick={() => navigate(-1)}
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            type="button"
+            className="card-nav card-nav-next"
+            aria-label="Next card"
+            disabled={index === session.length - 1}
+            onClick={() => navigate(1)}
+          >
+            <ChevronRight size={22} />
+          </button>
         </div>
         {revealed && (
           <div className="grade-controls">
